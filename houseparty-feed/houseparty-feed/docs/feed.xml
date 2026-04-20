@@ -1,1 +1,9 @@
-<feed>placeholder – run workflow to generate</feed>
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>Triple J House Party</title>
+    <link>https://www.abc.net.au/triplej/programs/house-party</link>
+    <description>Placeholder - zal worden bijgevuld door de workflow</description>
+    <language>en-au</language>
+  </channel>
+</rss>
