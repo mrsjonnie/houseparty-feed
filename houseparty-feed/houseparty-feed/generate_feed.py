@@ -11,6 +11,9 @@ from bs4 import BeautifulSoup
 BASE_URL = "https://www.abc.net.au/triplej/programs/house-party"
 OUTPUT_DIR = "docs"
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 def get_episodes():
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
     r = requests.get(BASE_URL, headers=headers, timeout=15)
