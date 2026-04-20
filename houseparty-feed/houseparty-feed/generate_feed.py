@@ -1,25 +1,15 @@
-import subprocess
-import json
-import os
-import re
+import subprocess, json, os, re
 from datetime import datetime, timezone
 from xml.etree.ElementTree import Element, SubElement, tostring
-import xml.dom.minidom
-import requests
+import xml.dom.minidom, requests
 from bs4 import BeautifulSoup
 
 BASE_URL = "https://www.abc.net.au/triplej/programs/house-party"
-OUTPUT_DIR = "docs"
-
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 def get_episodes():
-    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
-    r = requests.get(BASE_URL, headers=headers, timeout=15)
+    r = requests.get(BASE_URL, headers={"User-Agent": "Mozilla/5.0"}, timeout=15)
     soup = BeautifulSoup(r.text, "html.parser")
-    links = []
-    seen = set()
+    links, seen = [], set()
     for a in soup.find_all("a", href=True):
         href = a["href"]
         if re.search(r"/house-party/house-party/\d+", href):
@@ -29,92 +19,51 @@ def get_episodes():
                 links.append(full)
     return links[:10]
 
-def get_audio_info(episode_url):
+def get_audio_info(url):
     try:
-        result = subprocess.run(
-            ["yt-dlp", "-j", "--no-playlist", "--no-warnings", episode_url],
-            capture_output=True, text=True, timeout=60
-        )
-        if result.returncode == 0:
-            data = json.loads(result.stdout)
-            return {
-                "url": data.get("url"),
-                "title": data.get("title", "House Party"),
-                "description": data.get("description", ""),
-                "date": data.get("upload_date"),
-                "duration": data.get("duration", 0),
-                "thumbnail": data.get("thumbnail", ""),
-            }
+        r = subprocess.run(["yt-dlp", "-j", "--no-playlist", "--no-warnings", url],
+                           capture_output=True, text=True, timeout=60)
+        if r.returncode == 0:
+            d = json.loads(r.stdout)
+            return {"url": d.get("url"), "title": d.get("title", "House Party"),
+                    "description": d.get("description", ""), "date": d.get("upload_date")}
     except Exception as e:
-        print(f"Error fetching {episode_url}: {e}")
+        print(f"Error: {e}")
     return None
 
-def build_rss(episodes_data):
+def build_rss(episodes):
     rss = Element("rss", version="2.0")
-    rss.set("xmlns:itunes", "http://www.itunes.com/dtds/podcast-1.0.dtd")
-    rss.set("xmlns:atom", "http://www.w3.org/2005/Atom")
-
-    channel = SubElement(rss, "channel")
-    SubElement(channel, "title").text = "Triple J House Party"
-    SubElement(channel, "link").text = BASE_URL
-    SubElement(channel, "description").text = "Triple J House Party DJ mix show – auto-generated feed"
-    SubElement(channel, "language").text = "en-au"
-    SubElement(channel, "itunes:author").text = "triple j"
-    SubElement(channel, "itunes:category", text="Music")
-
-    pages_url = os.environ.get("PAGES_URL", "https://YOUR_USERNAME.github.io/houseparty-feed")
-    atom_link = SubElement(channel, "atom:link")
-    atom_link.set("href", f"{pages_url}/feed.xml")
-    atom_link.set("rel", "self")
-    atom_link.set("type", "application/rss+xml")
-
-    for ep in episodes_data:
-        item = SubElement(channel, "item")
+    ch = SubElement(rss, "channel")
+    SubElement(ch, "title").text = "Triple J House Party"
+    SubElement(ch, "link").text = BASE_URL
+    SubElement(ch, "description").text = "Triple J House Party DJ mix show"
+    for ep in episodes:
+        item = SubElement(ch, "item")
         SubElement(item, "title").text = ep["title"]
         SubElement(item, "link").text = ep["page_url"]
         SubElement(item, "guid", isPermaLink="false").text = ep["page_url"]
-        SubElement(item, "description").text = ep["description"][:500] if ep["description"] else ""
-
-        if ep["date"]:
+        SubElement(item, "description").text = ep.get("description", "")[:500]
+        if ep.get("date"):
             try:
                 dt = datetime.strptime(ep["date"], "%Y%m%d").replace(tzinfo=timezone.utc)
                 SubElement(item, "pubDate").text = dt.strftime("%a, %d %b %Y %H:%M:%S +0000")
-            except:
-                pass
-
-        if ep["url"]:
+            except: pass
+        if ep.get("url"):
             enc = SubElement(item, "enclosure")
-            enc.set("url", ep["url"])
-            enc.set("type", "audio/mpeg")
-            enc.set("length", "0")
-
-        if ep["duration"]:
-            SubElement(item, "itunes:duration").text = str(int(ep["duration"]))
-
-    xml_str = xml.dom.minidom.parseString(tostring(rss, encoding="unicode")).toprettyxml(indent="  ")
-    return xml_str
+            enc.set("url", ep["url"]); enc.set("type", "audio/mpeg"); enc.set("length", "0")
+    return xml.dom.minidom.parseString(tostring(rss, encoding="unicode")).toprettyxml(indent="  ")
 
 if __name__ == "__main__":
-    os.makedirs(OUTPUT_DIR, exist_ok=True)
-    print("Fetching episode list...")
-    episode_urls = get_episodes()
-    print(f"Found {len(episode_urls)} episodes")
-
-    episodes_data = []
-    for url in episode_urls:
-        print(f"Fetching audio info: {url}")
+    os.makedirs("docs", exist_ok=True)
+    eps = get_episodes()
+    print(f"Found {len(eps)} episodes")
+    data = []
+    for url in eps:
         info = get_audio_info(url)
         if info:
             info["page_url"] = url
-            episodes_data.append(info)
-            print(f"  ✓ {info['title']}")
-        else:
-            print(f"  ✗ skipped")
-
-    print(f"Building RSS feed with {len(episodes_data)} episodes...")
-    rss_xml = build_rss(episodes_data)
-
-    output_path = os.path.join(OUTPUT_DIR, "feed.xml")
-    with open(output_path, "w", encoding="utf-8") as f:
-        f.write(rss_xml)
-    print(f"Feed written to {output_path}")
+            data.append(info)
+            print(f"OK: {info['title']}")
+    with open("docs/feed.xml", "w", encoding="utf-8") as f:
+        f.write(build_rss(data))
+    print("Done: docs/feed.xml")
