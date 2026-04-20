@@ -122,34 +122,48 @@ def extract_episode_info(page_url):
 
         # ----- upload date -----
         upload_date = None
-        doc = props.get("data", {}).get("documentProps", {})
-        for key in ("firstPublished", "datePublished", "uploadDate", "publishDate"):
-            if doc.get(key):
-                upload_date = doc[key]
-                break
-        # fallback: search recursively for a plain YYYYMMDD string
-        if not upload_date:
-            def find_date(obj):
-                if isinstance(obj, dict):
-                    for v in obj.values():
-                        if isinstance(v, str) and re.fullmatch(r"\d{8}", v):
-                            return v
-                        res = find_date(v)
-                        if res:
-                            return res
-                elif isinstance(obj, list):
-                    for v in obj:
-                        res = find_date(v)
-                        if res:
-                            return res
-                return None
-            upload_date = find_date(props)
+        # 1) Look for meta article:published_time in HTML
+        meta_date = re.search(
+            r'<meta[^>]+property=["\']article:published_time["\'][^>]+content=["\']([^"\']+)',
+            html,
+        )
+        if meta_date:
+            # keep only the date part (YYYY-MM-DD)
+            upload_date = meta_date.group(1)[:10].replace("-", "")
+        else:
+            # 2) Fallback: search JSON for common date fields
+            doc = props.get("data", {}).get("documentProps", {})
+            for key in ("firstPublished", "datePublished", "uploadDate", "publishDate"):
+                if doc.get(key):
+                    upload_date = str(doc[key])[:10].replace("-", "")
+                    break
+            # 3) Last resort: scan JSON for any YYYYMMDD string
+            if not upload_date:
+                def find_date(obj):
+                    if isinstance(obj, dict):
+                        for v in obj.values():
+                            if isinstance(v, str) and re.fullmatch(r"\d{8}", v):
+                                return v
+                            res = find_date(v)
+                            if res:
+                                return res
+                    elif isinstance(obj, list):
+                        for v in obj:
+                            res = find_date(v)
+                            if res:
+                                return res
+                    return None
+                upload_date = find_date(props)
 
         # ----- presenter -----
         presenter_name = ""
         presenter_url = ""
         try:
-            prep = props.get("presentersProps", {}).get("linkPrepared", [])
+            # The presenter block lives under heroImageWithCTAPrepared
+            hero = props.get("data", {}).get("documentProps", {}).get(
+                "heroImageWithCTAPrepared", {}
+            )
+            prep = hero.get("presentersProps", {}).get("linkPrepared", [])
             if prep and isinstance(prep, list) and len(prep) > 0:
                 item = prep[0]
                 presenter_name = item.get("label", {}).get("full", "").strip()
@@ -159,11 +173,24 @@ def extract_episode_info(page_url):
         except Exception:
             pass
 
+        # ----- title -----
+        title_raw = ""
+        # Try documentProps.title first
+        doc = props.get("data", {}).get("documentProps", {})
+        if doc.get("title"):
+            title_raw = doc["title"]
+        elif doc.get("programTitle"):
+            title_raw = doc["programTitle"]
+        else:
+            # fallback to a generic title
+            title_raw = "House Party"
+
         return {
             "audio_url": audio_url,
             "upload_date": upload_date,
             "presenter_name": presenter_name,
             "presenter_url": presenter_url,
+            "title_raw": title_raw,
         }
     except Exception as e:
         print(f"  FOUT bij verwerken {page_url}: {e}")
@@ -171,7 +198,7 @@ def extract_episode_info(page_url):
 
 
 def format_date(upload_date_str):
-    """Convert YYYYMMDD → 'Sat 21 Mar 2026 at 8:00am' (fixed 08:00 am)."""
+    """Convert YYYYMMDD → 'Sat 17 Apr 2026 at 8:00am' (fixed 08:00 am)."""
     try:
         dt = datetime.strptime(upload_date_str, "%Y%m%d").replace(tzinfo=timezone.utc)
         day_name = dt.strftime("%a")
