@@ -20,7 +20,7 @@ def get_info(url):
         d = json.loads(r.stdout)
         return {"url": d.get("url"), "title": d.get("title", "House Party"),
                 "description": d.get("description", ""), "date": d.get("upload_date")}
-    print(f"FOUT: {r.stderr[:100]}")
+    print("FOUT: " + r.stderr[:100])
     return None
 
 def build_rss(items):
@@ -53,16 +53,16 @@ def build_rss(items):
 os.makedirs("docs", exist_ok=True)
 data = []
 for url in FALLBACK:
-    print(f"Verwerken: {url}")
+    print("Verwerken: " + url)
     info = get_info(url)
     if info:
         info["page_url"] = url
         data.append(info)
-        print(f"  OK: {info['title']}")
+        print("  OK: " + info["title"])
     else:
-        print(f"  OVERGESLAGEN")
+        print("  OVERGESLAGEN")
 
-print(f"Feed: {len(data)} items")
+print("Feed: " + str(len(data)) + " items")
 with open("docs/feed.xml", "w", encoding="utf-8") as f:
     f.write(build_rss(data))
 print("Klaar!")
