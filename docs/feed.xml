@@ -1,0 +1,9 @@
+<?xml version="1.0" ?>
+<rss xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd" version="2.0">
+  <channel>
+    <title>Triple J House Party</title>
+    <link>https://www.abc.net.au/triplej/programs/house-party</link>
+    <description>Triple J House Party DJ mix show</description>
+    <language>en-au</language>
+  </channel>
+</rss>
