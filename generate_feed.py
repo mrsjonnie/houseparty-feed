@@ -1,25 +1,21 @@
-import subprocess, json, os, re
+import subprocess, json, os
 from datetime import datetime, timezone
 from xml.etree.ElementTree import Element, SubElement, tostring
-import xml.dom.minidom, requests
+import xml.dom.minidom
 
 BASE_URL = "https://www.abc.net.au/triplej/programs/house-party"
-API_URL = "https://api.abc.net.au/v2/page/collection?path=/triplej/programs/house-party&size=10"
 
-def get_episodes():
-    headers = {"User-Agent": "Mozilla/5.0"}
-    try:
-        r = requests.get(API_URL, headers=headers, timeout=15)
-        data = r.json()
-        episodes = []
-        for item in data.get("collection", []):
-            url = item.get("canonicalURL", "")
-            if url:
-                episodes.append("https://www.abc.net.au" + url if url.startswith("/") else url)
-        return episodes[:10]
-    except Exception as e:
-        print(f"API fout: {e}")
-        return []
+# Bekende recente afleveringen (handmatig bijgehouden als fallback)
+KNOWN_EPISODES = [
+    "https://www.abc.net.au/triplej/programs/house-party/house-party/106531936",
+    "https://www.abc.net.au/triplej/programs/house-party/house-party/106507590",
+    "https://www.abc.net.au/triplej/programs/house-party/house-party/106484466",
+    "https://www.abc.net.au/triplej/programs/house-party/house-party/106482730",
+    "https://www.abc.net.au/triplej/programs/house-party/house-party/106428746",
+    "https://www.abc.net.au/triplej/programs/house-party/house-party/106403324",
+    "https://www.abc.net.au/triplej/programs/house-party/house-party/106401270",
+    "https://www.abc.net.au/triplej/programs/house-party/house-party/106401094",
+]
 
 def get_audio_info(url):
     try:
@@ -36,7 +32,7 @@ def get_audio_info(url):
                 "date": d.get("upload_date"),
             }
         else:
-            print(f"yt-dlp fout: {r.stderr[:200]}")
+            print(f"yt-dlp fout ({url}): {r.stderr[:300]}")
     except Exception as e:
         print(f"Error: {e}")
     return None
@@ -69,11 +65,8 @@ def build_rss(episodes):
 
 if __name__ == "__main__":
     os.makedirs("docs", exist_ok=True)
-    print("Afleveringen ophalen via ABC API...")
-    eps = get_episodes()
-    print(f"Gevonden: {len(eps)} afleveringen")
     data = []
-    for url in eps:
+    for url in KNOWN_EPISODES:
         print(f"Verwerken: {url}")
         info = get_audio_info(url)
         if info:
@@ -85,4 +78,4 @@ if __name__ == "__main__":
     print(f"Feed bouwen met {len(data)} afleveringen...")
     with open("docs/feed.xml", "w", encoding="utf-8") as f:
         f.write(build_rss(data))
-    print("Klaar: docs/feed.xml")
+    print(f"Klaar: docs/feed.xml ({len(data)} items)")
