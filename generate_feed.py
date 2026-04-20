@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Generate Triple J House Party RSS feed with date & presenter in the title.
-Falls back to scraping the program page when the collection API is blocked.
+Falls back to scraping the program page when the collection API returns 403.
 """
 
 import json, os, re, sys
@@ -42,7 +42,7 @@ def get_episode_urls_from_api():
                     if url.startswith("/"):
                         url = "https://www.abc.net.au" + url
                     urls.append(url)
-        # deduplicate, keep order
+        # deduplicate while preserving order
         seen = set()
         uniq = []
         for u in urls:
@@ -68,11 +68,11 @@ def get_episode_urls_from_program_page():
         # Find all <a href="/triplej/programs/house-party/house-party/xxxxxx">
         pattern = r'href="(/triplej/programs/house-party/house-party/\d+)"'
         matches = re.findall(pattern, html)
-        # Make them absolute and keep order
+        # Make them absolute and keep order (first occurrence only)
         urls = []
         for m in matches:
             abs_url = "https://www.abc.net.au" + m
-            if abs_url not in urls:   # preserve first occurrence only
+            if abs_url not in urls:
                 urls.append(abs_url)
         return urls
     except Exception as e:
@@ -222,4 +222,56 @@ def build_rss(items):
 if __name__ == "__main__":
     os.makedirs("docs", exist_ok=True)
     print("Ophalen afleveringenlijst …")
-    episode_urls 
+    episode_urls = get_episode_urls_from_api()
+    if episode_urls is None:
+        print("WAARSCHUWLING: API blokkeert (403), scrapen programmapiagina …")
+        episode_urls = get_episode_urls_from_program_page()
+        if not episode_urls:
+            print("FOUT: Kon geen afleveringen vinden – eindigt.")
+            sys.exit(1)
+
+    data = []
+    for url in episode_urls:
+        print(f"Verwerken: {url}")
+        info = extract_episode_info(url)
+        if not info or not info.get("audio_url"):
+            print("  OVERGESLAGEN (geen audio‑info)")
+            continue
+
+        audio_url = info["audio_url"]
+        upload_date = info["upload_date"]
+        date_str = format_date(upload_date) if upload_date else ""
+
+        presenter_name = info["presenter_name"]
+        presenter_url = info["presenter_url"]
+        if presenter_name:
+            presenter_part = (
+                f"[{presenter_name}]({presenter_url})" if presenter_url else presenter_name
+            )
+        else:
+            presenter_part = ""
+
+        # Build title: <date> – House Party [Presenter](URL)
+        parts = []
+        if date_str:
+            parts.append(date_str)
+        parts.append("– House Party")
+        if presenter_part:
+            parts.append(f"[{presenter_part}]")
+        title = " ".join(parts)
+
+        data.append(
+            {
+                "title": title,
+                "url": audio_url,
+                "page_url": url,
+                "date": upload_date,
+                "description": "",  # optional
+            }
+        )
+        print(f"  OK: {title}")
+
+    print(f"Feed bouwen met {len(data)} afleveringen …")
+    with open("docs/feed.xml", "w", encoding="utf-8") as f:
+        f.write(build_rss(data))
+    print(f"Klaar: docs/feed.xml ({len(data)} items)")
