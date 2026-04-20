@@ -7,6 +7,13 @@
     <language>en-au</language>
     <item>
       <title>– House Party</title>
+      <link>https://www.abc.net.au/triplej/programs/house-party/house-party/106556580</link>
+      <guid isPermaLink="false">https://www.abc.net.au/triplej/programs/house-party/house-party/106556580</guid>
+      <description/>
+      <enclosure url="https://mediacore-live-production.akamaized.net/audio/02/jm/Z/vk.aac" type="audio/mpeg" length="0"/>
+    </item>
+    <item>
+      <title>– House Party</title>
       <link>https://www.abc.net.au/triplej/programs/house-party/house-party/106555166</link>
       <guid isPermaLink="false">https://www.abc.net.au/triplej/programs/house-party/house-party/106555166</guid>
       <description/>
@@ -14,10 +21,24 @@
     </item>
     <item>
       <title>– House Party</title>
+      <link>https://www.abc.net.au/triplej/programs/house-party/house-party/106533298</link>
+      <guid isPermaLink="false">https://www.abc.net.au/triplej/programs/house-party/house-party/106533298</guid>
+      <description/>
+      <enclosure url="https://mediacore-live-production.akamaized.net/audio/02/jf/Z/8n.aac" type="audio/mpeg" length="0"/>
+    </item>
+    <item>
+      <title>– House Party</title>
       <link>https://www.abc.net.au/triplej/programs/house-party/house-party/106531936</link>
       <guid isPermaLink="false">https://www.abc.net.au/triplej/programs/house-party/house-party/106531936</guid>
       <description/>
       <enclosure url="https://mediacore-live-production.akamaized.net/audio/02/je/Z/mg.aac" type="audio/mpeg" length="0"/>
+    </item>
+    <item>
+      <title>– House Party</title>
+      <link>https://www.abc.net.au/triplej/programs/house-party/house-party/106509250</link>
+      <guid isPermaLink="false">https://www.abc.net.au/triplej/programs/house-party/house-party/106509250</guid>
+      <description/>
+      <enclosure url="https://mediacore-live-production.akamaized.net/audio/02/j8/Z/si.aac" type="audio/mpeg" length="0"/>
     </item>
     <item>
       <title>– House Party</title>
@@ -39,13 +60,6 @@
       <guid isPermaLink="false">https://www.abc.net.au/triplej/programs/house-party/house-party/106482730</guid>
       <description/>
       <enclosure url="https://mediacore-live-production.akamaized.net/audio/02/j1/Z/ic.aac" type="audio/mpeg" length="0"/>
-    </item>
-    <item>
-      <title>– House Party</title>
-      <link>https://www.abc.net.au/triplej/programs/house-party/house-party/106457968</link>
-      <guid isPermaLink="false">https://www.abc.net.au/triplej/programs/house-party/house-party/106457968</guid>
-      <description/>
-      <enclosure url="https://mediacore-live-production.akamaized.net/audio/02/ir/Z/l6.aac" type="audio/mpeg" length="0"/>
     </item>
   </channel>
 </rss>
