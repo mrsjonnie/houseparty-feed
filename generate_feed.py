@@ -17,12 +17,20 @@ COLLECTION_API = (
     "https://api.abc.net.au/v2/page/collection?"
     "path=/triplej/programs/house-party&size=20"
 )
+FALLBACK_URLS = [
+    "https://www.abc.net.au/triplej/programs/house-party/house-party/106555166",
+    "https://www.abc.net.au/triplej/programs/house-party/house-party/106531936",
+    "https://www.abc.net.au/triplej/programs/house-party/house-party/106507590",
+    "https://www.abc.net.au/triplej/programs/house-party/house-party/106484466",
+    "https://www.abc.net.au/triplej/programs/house-party/house-party/106482730",
+    "https://www.abc.net.au/triplej/programs/house-party/house-party/106457968",
+]
 
 # ----------------------------------------------------------------------
 # Helper functions
 # ----------------------------------------------------------------------
 def get_collection():
-    """Haalt de lijst met afleverings‑URL’s op van de ABC‑API."""
+    """Probeer de afleveringenlijst op te halen via de ABC‑API."""
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
                       "AppleWebKit/537.36 (KHTML, like Gecko) "
@@ -53,60 +61,37 @@ def get_collection():
         return []
 
 
-def get_audio_url(page_url):
-    """Gegeven een afleverings‑pagina, retourneer de directe audio‑URL."""
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                      "AppleWebKit/537.36 (KHTML, like Gecko) "
-                      "Chrome/124.0.0.0 Safari/537.36"
-    }
+def get_info_with_ytdlp(page_url):
+    """
+    Gebruik yt-dlp om:
+    - directe audio‑URL
+    - titel (als fallback)
+    - upload_date (YYYYMMDD)
+    Retourneert een dict met keys: url, title, upload_date.
+    """
+    cmd = [
+        "yt-dlp",
+        "-j",
+        "--no-playlist",
+        "--no-warnings",
+        "--geo-bypass",
+        page_url,
+    ]
     try:
-        r = requests.get(page_url, headers=headers, timeout=15)
-        r.raise_for_status()
-        m = re.search(
-            r'<script id="__NEXT_DATA__" type="application/json">([^<]+)</script>',
-            r.text,
+        result = subprocess.run(
+            cmd, capture_output=True, text=True, timeout=30
         )
-        if not m:
-            print(f"  GEEN __NEXT_DATA__ in {page_url}")
+        if result.returncode != 0:
+            print(f"  yt-dlp fout: {result.stderr[:120]}")
             return None
-        data = json.loads(m.group(1))
-        try:
-            renditions = data["props"]["pageProps"]["data"]["documentProps"]["renditions"]
-            if renditions and isinstance(renditions, list):
-                audio_url = renditions[0].get("url")
-                if audio_url:
-                    return audio_url
-        except (KeyError, TypeError, IndexError):
-            pass
-
-        # Fallback: zoek elke .aac/.mp4/.m3u8 URL in de JSON
-        def find_media(obj):
-            if isinstance(obj, dict):
-                for v in obj.values():
-                    if isinstance(v, str) and (
-                        v.endswith(".aac")
-                        or v.endswith(".mp4")
-                        or ".m3u8" in v
-                    ):
-                        return v
-                    res = find_media(v)
-                    if res:
-                        return res
-            elif isinstance(obj, list):
-                for v in obj:
-                    res = find_media(v)
-                    if res:
-                        return res
-            return None
-
-        audio_url = find_media(data)
-        if audio_url:
-            return audio_url
-        print(f"  GEEN AUDIO‑URL gevonden in {page_url}")
-        return None
+        data = json.loads(result.stdout)
+        return {
+            "url": data.get("url"),
+            "title": data.get("title", "House Party"),
+            "upload_date": data.get("upload_date"),
+        }
     except Exception as e:
-        print(f"  FOUT bij verwerken {page_url}: {e}")
+        print(f"  yt-dlp exception: {e}")
         return None
 
 
@@ -125,9 +110,7 @@ def get_presenter(page_url):
         r.raise_for_status()
         html = r.text
 
-        # Zoek naar een label zoals "Presenter" of "Host" gevolgd door een naam
-        # Voorbeeld: <span>Presenter</span><span>Latifa Tee</span>
-        # of <div class="presenter">Latifa Tee</div>
+        # Zoek naar een label zoals "Presenter" of "Host"
         patterns = [
             r'Presenter[^>]*>[^<]*<[^>]*>([^<]+)',
             r'Host[^>]*>[^<]*<[^>]*>([^<]+)',
@@ -143,11 +126,10 @@ def get_presenter(page_url):
                     rf'href="([^"]*{re.escape(name)}[^"]*)"', html, re.I
                 )
                 presenter_url = link_m.group(1) if link_m else ""
-                # Maak de URL absoluut indien nodig
                 if presenter_url and presenter_url.startswith("/"):
                     presenter_url = "https://www.abc.net.au" + presenter_url
                 return name, presenter_url
-        # Als geen specifieke label gevonden, kijk naar een bekende auteur‑meta
+        # Fallback: zoek naar een <meta name="author"> tag
         meta = re.search(
             r'<meta[^>]+name=["\']author["\'][^>]+content=["\']([^"\']+)["\']',
             html,
@@ -164,17 +146,16 @@ def get_presenter(page_url):
 
 def format_date(upload_date_str):
     """
-    Converteert YYYYMMDD → "Sat 21 Mar 2026 at 8:00am".
-    Als de tijd onbekend is, gebruiken we een vaste tijdstip 08:00 am.
+    Zet YYYYMMDD om naar "Sat 21 Mar 2026 at 8:00am".
+    (We gebruiken een vaste tijdstip 08:00 am omdat de exacte tijd
+    niet altijd beschikbaar is in de metadata.)
     """
     try:
         dt = datetime.strptime(upload_date_str, "%Y%m%d").replace(tzinfo=timezone.utc)
-        # Dagnaam, dag, maand, jaar
         day_name = dt.strftime("%a")
-        day = dt.strftime("%d").lstrip("0")  # verwijder leading zero
+        day = dt.strftime("%d").lstrip("0")   # verwijder leading zero
         month = dt.strftime("%b")
         year = dt.strftime("%Y")
-        # vaste tijd (kan later verfijnd worden indien tijd beschikbaar komt)
         time_str = "8:00am"
         return f"{day_name} {day} {month} {year} at {time_str}"
     except Exception:
@@ -223,62 +204,37 @@ if __name__ == "__main__":
     page_urls = get_collection()
     if not page_urls:
         print("WAARSCHUWLING: Geen afleveringen gevonden via API, gebruik vaste lijst.")
-        page_urls = [
-            "https://www.abc.net.au/triplej/programs/house-party/house-party/106555166",
-            "https://www.abc.net.au/triplej/programs/house-party/house-party/106531936",
-            "https://www.abc.net.au/triplej/programs/house-party/house-party/106507590",
-            "https://www.abc.net.au/triplej/programs/house-party/house-party/106484466",
-            "https://www.abc.net.au/triplej/programs/house-party/house-party/106482730",
-            "https://www.abc.net.au/triplej/programs/house-party/house-party/106457968",
-        ]
+        page_urls = FALLBACK_URLS
 
     data = []
     for url in page_urls:
         print(f"Verwerken: {url}")
-        audio_url = get_audio_url(url)
-        if not audio_url:
-            print("  OVERGESLAGEN (geen audio)")
+        info = get_info_with_ytdlp(url)
+        if not info or not info.get("url"):
+            print("  OVERGESLAGEN (geen audio‑info)")
             continue
 
-        # Datum en presenter
-        # Probeer eerst datum uit yt-dlp (via upload_date) – we halen het nog even op
-        # zodat we een consistente datum hebben voor de titel.
-        # We maken een aparte yt-dlp call alleen voor datum/presentator info.
-        # Dit is efficiënt genoeg omdat we maar enkele afleveringen per run hebben.
-        yt_info = None
-        try:
-            yt_proc = subprocess.run(
-                ["yt-dlp", "-j", "--no-playlist", "--no-warnings", "--geo-bypass", url],
-                capture_output=True,
-                text=True,
-                timeout=30,
-            )
-            if yt_proc.returncode == 0:
-                yt_info = json.loads(yt_proc.stdout)
-        except Exception:
-            yt_info = None
-
-        upload_date = yt_info.get("upload_date") if yt_info else None
+        audio_url = info["url"]
+        raw_title = info.get("title", "House Party")
+        upload_date = info.get("upload_date")
         date_str = format_date(upload_date) if upload_date else ""
 
         presenter_name, presenter_url = get_presenter(url)
-        # Als we geen presenter vinden, val terug op lege string
         if presenter_name:
-            # Markdown‑achtige link zoals gewenst: [Latifa Tee](URL)
-            presenter_part = f"[{presenter_name}]({presenter_url})" if presenter_url else presenter_name
+            presenter_part = (
+                f"[{presenter_name}]({presenter_url})" if presenter_url else presenter_name
+            )
         else:
             presenter_part = ""
 
-        # Titel opbouwen
-        base_title = "House Party"
-        if date_str and presenter_part:
-            title = f"{date_str} – {base_title} [{presenter_part}]"
-        elif date_str:
-            title = f"{date_str} – {base_title}"
-        elif presenter_part:
-            title = f"{base_title} [{presenter_part}]"
-        else:
-            title = base_title
+        # Bouw de titel zoals gewenst
+        parts = []
+        if date_str:
+            parts.append(date_str)
+        parts.append("– House Party")
+        if presenter_part:
+            parts.append(f"[{presenter_part}]")
+        title = " ".join(parts)
 
         data.append(
             {
