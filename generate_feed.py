@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Generate Triple J House Party RSS feed with date & presenter in the title.
-Uses direct HTTP requests + __NEXT_DATA__ parsing (no yt-dlp needed).
+Falls back to scraping the program page when the collection API is blocked.
 """
 
 import json, os, re, sys
@@ -14,24 +14,17 @@ import requests
 # Config
 # ----------------------------------------------------------------------
 BASE_URL = "https://www.abc.net.au/triplej/programs/house-party"
+PROGRAM_PAGE = BASE_URL  # https://www.abc.net.au/triplej/programs/house-party
 COLLECTION_API = (
     "https://api.abc.net.au/v2/page/collection?"
     "path=/triplej/programs/house-party&size=20"
 )
-FALLBACK_URLS = [
-    "https://www.abc.net.au/triplej/programs/house-party/house-party/106555166",
-    "https://www.abc.net.au/triplej/programs/house-party/house-party/106531936",
-    "https://www.abc.net.au/triplej/programs/house-party/house-party/106507590",
-    "https://www.abc.net.au/triplej/programs/house-party/house-party/106484466",
-    "https://www.abc.net.au/triplej/programs/house-party/house-party/106482730",
-    "https://www.abc.net.au/triplej/programs/house-party/house-party/106457968",
-]
 
 # ----------------------------------------------------------------------
 # Helper functions
 # ----------------------------------------------------------------------
-def get_collection():
-    """Try to get the episode list from the ABC API."""
+def get_episode_urls_from_api():
+    """Try to get episode URLs from the (sometimes blocked) collection API."""
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
                       "AppleWebKit/537.36 (KHTML, like Gecko) "
@@ -49,7 +42,7 @@ def get_collection():
                     if url.startswith("/"):
                         url = "https://www.abc.net.au" + url
                     urls.append(url)
-        # deduplicate while preserving order
+        # deduplicate, keep order
         seen = set()
         uniq = []
         for u in urls:
@@ -57,8 +50,33 @@ def get_collection():
                 seen.add(u)
                 uniq.append(u)
         return uniq
+    except Exception:
+        return None   # signal failure → fall back to scraping
+
+
+def get_episode_urls_from_program_page():
+    """Scrape the program page for episode links."""
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                      "AppleWebKit/537.36 (KHTML, like Gecko) "
+                      "Chrome/124.0.0.0 Safari/537.36"
+    }
+    try:
+        r = requests.get(PROGRAM_PAGE, headers=headers, timeout=15)
+        r.raise_for_status()
+        html = r.text
+        # Find all <a href="/triplej/programs/house-party/house-party/xxxxxx">
+        pattern = r'href="(/triplej/programs/house-party/house-party/\d+)"'
+        matches = re.findall(pattern, html)
+        # Make them absolute and keep order
+        urls = []
+        for m in matches:
+            abs_url = "https://www.abc.net.au" + m
+            if abs_url not in urls:   # preserve first occurrence only
+                urls.append(abs_url)
+        return urls
     except Exception as e:
-        print(f"FOUT bij ophalen collectie: {e}")
+        print(f"  FOUT bij ophalen programmapiagina: {e}")
         return []
 
 
@@ -87,10 +105,11 @@ def extract_episode_info(page_url):
         props = data.get("props", {}).get("pageProps", {})
 
         # ----- audio URL -----
+        audio_url = None
         try:
             renditions = props["data"]["documentProps"]["renditions"]
             if renditions and isinstance(renditions, list):
-                # pick the first entry that looks like an audio file
+                # pick first that looks like an audio file
                 for rend in renditions:
                     url = rend.get("url")
                     if url and (url.endswith(".aac") or ".m3u8" in url):
@@ -98,10 +117,8 @@ def extract_episode_info(page_url):
                         break
                 else:
                     audio_url = renditions[0].get("url")
-            else:
-                audio_url = None
         except (KeyError, TypeError, IndexError):
-            audio_url = None
+            pass
 
         # ----- upload date -----
         upload_date = None
@@ -110,7 +127,7 @@ def extract_episode_info(page_url):
             if doc.get(key):
                 upload_date = doc[key]
                 break
-        # fallback: search recursively for a string that looks like YYYYMMDD
+        # fallback: search recursively for a plain YYYYMMDD string
         if not upload_date:
             def find_date(obj):
                 if isinstance(obj, dict):
@@ -187,16 +204,16 @@ def build_rss(items):
                 SubElement(it, "pubDate").text = dt.strftime(
                     "%a, %d %b %Y %H:%M:%S +0000"
                 )
-            except:
+            except Exception:
                 pass
         if ep.get("url"):
             enc = SubElement(it, "enclosure")
             enc.set("url", ep["url"])
             enc.set("type", "audio/mpeg")
             enc.set("length", "0")
-    return xml.dom.minidom.parseString(tostring(rss, encoding="unicode")).toprettyxml(
-        indent="  "
-    )
+    return xml.dom.minidom.parseString(
+        tostring(rss, encoding="unicode")
+    ).toprettyxml(indent="  ")
 
 
 # ----------------------------------------------------------------------
@@ -205,53 +222,4 @@ def build_rss(items):
 if __name__ == "__main__":
     os.makedirs("docs", exist_ok=True)
     print("Ophalen afleveringenlijst …")
-    page_urls = get_collection()
-    if not page_urls:
-        print("WAARSCHUWLING: Geen afleveringen gevonden via API, gebruik vaste lijst.")
-        page_urls = FALLBACK_URLS
-
-    data = []
-    for url in page_urls:
-        print(f"Verwerken: {url}")
-        info = extract_episode_info(url)
-        if not info or not info.get("audio_url"):
-            print("  OVERGESLAGEN (geen audio‑info)")
-            continue
-
-        audio_url = info["audio_url"]
-        upload_date = info["upload_date"]
-        date_str = format_date(upload_date) if upload_date else ""
-
-        presenter_name = info["presenter_name"]
-        presenter_url = info["presenter_url"]
-        if presenter_name:
-            presenter_part = (
-                f"[{presenter_name}]({presenter_url})" if presenter_url else presenter_name
-            )
-        else:
-            presenter_part = ""
-
-        # Build title: <date> – House Party [Presenter](URL)
-        parts = []
-        if date_str:
-            parts.append(date_str)
-        parts.append("– House Party")
-        if presenter_part:
-            parts.append(f"[{presenter_part}]")
-        title = " ".join(parts)
-
-        data.append(
-            {
-                "title": title,
-                "url": audio_url,
-                "page_url": url,
-                "date": upload_date,
-                "description": "",  # optional
-            }
-        )
-        print(f"  OK: {title}")
-
-    print(f"Feed bouwen met {len(data)} afleveringen …")
-    with open("docs/feed.xml", "w", encoding="utf-8") as f:
-        f.write(build_rss(data))
-    print(f"Klaar: docs/feed.xml ({len(data)} items)")
+    episode_urls 
