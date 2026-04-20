@@ -4,6 +4,7 @@ from xml.etree.ElementTree import Element, SubElement, tostring
 import xml.dom.minidom
 
 BASE_URL = "https://www.abc.net.au/triplej/programs/house-party"
+# Bekende recente afleveringen (handmatig bijgewerkt indien nodig)
 FALLBACK = [
     "https://www.abc.net.au/triplej/programs/house-party/house-party/106555166",
     "https://www.abc.net.au/triplej/programs/house-party/house-party/106531936",
@@ -14,16 +15,24 @@ FALLBACK = [
 ]
 
 def get_info(url):
-    r = subprocess.run(["yt-dlp", "-j", "--no-playlist", "--no-warnings", url],
-                       capture_output=True, text=True, timeout=60)
+    """Haalt met yt-dlp (met geo‑bypass) de audio‑URL, titel, beschrijving en upload‑date op."""
+    r = subprocess.run(
+        ["yt-dlp", "-j", "--no-playlist", "--no-warnings", "--geo-bypass", url],
+        capture_output=True, text=True, timeout=60
+    )
     if r.returncode == 0:
         d = json.loads(r.stdout)
-        return {"url": d.get("url"), "title": d.get("title", "House Party"),
-                "description": d.get("description", ""), "date": d.get("upload_date")}
-    print("FOUT: " + r.stderr[:100])
+        return {
+            "url": d.get("url"),
+            "title": d.get("title", "House Party"),
+            "description": d.get("description", ""),
+            "date": d.get("upload_date"),
+        }
+    print(f"FOUT: {r.stderr[:120]}")
     return None
 
 def build_rss(items):
+    """Bouwt een RSS‑feed met iTunes‑namespace."""
     rss = Element("rss", version="2.0")
     rss.set("xmlns:itunes", "http://www.itunes.com/dtds/podcast-1.0.dtd")
     ch = SubElement(rss, "channel")
@@ -50,19 +59,19 @@ def build_rss(items):
             enc.set("length", "0")
     return xml.dom.minidom.parseString(tostring(rss, encoding="unicode")).toprettyxml(indent="  ")
 
-os.makedirs("docs", exist_ok=True)
-data = []
-for url in FALLBACK:
-    print("Verwerken: " + url)
-    info = get_info(url)
-    if info:
-        info["page_url"] = url
-        data.append(info)
-        print("  OK: " + info["title"])
-    else:
-        print("  OVERGESLAGEN")
-
-print("Feed: " + str(len(data)) + " items")
-with open("docs/feed.xml", "w", encoding="utf-8") as f:
-    f.write(build_rss(data))
-print("Klaar!")
+if __name__ == "__main__":
+    os.makedirs("docs", exist_ok=True)
+    data = []
+    for url in FALLBACK:
+        print(f"Verwerken: {url}")
+        info = get_info(url)
+        if info:
+            info["page_url"] = url
+            data.append(info)
+            print(f"  OK: {info['title']}")
+        else:
+            print("  OVERGESLAGEN")
+    print(f"Feed bouwen met {len(data)} afleveringen …")
+    with open("docs/feed.xml", "w", encoding="utf-8") as f:
+        f.write(build_rss(data))
+    print(f"Klaar: docs/feed.xml ({len(data)} items)")
