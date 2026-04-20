@@ -1,35 +1,91 @@
-import subprocess, json, os
+import subprocess, json, os, re, sys
 from datetime import datetime, timezone
 from xml.etree.ElementTree import Element, SubElement, tostring
 import xml.dom.minidom
+import requests
 
 BASE_URL = "https://www.abc.net.au/triplej/programs/house-party"
-# Bekende recente afleveringen (handmatig bijgewerkt indien nodig)
-FALLBACK = [
-    "https://www.abc.net.au/triplej/programs/house-party/house-party/106555166",
-    "https://www.abc.net.au/triplej/programs/house-party/house-party/106531936",
-    "https://www.abc.net.au/triplej/programs/house-party/house-party/106507590",
-    "https://www.abc.net.au/triplej/programs/house-party/house-party/106484466",
-    "https://www.abc.net.au/triplej/programs/house-party/house-party/106482730",
-    "https://www.abc.net.au/triplej/programs/house-party/house-party/106457968",
-]
+COLLECTION_API = "https://api.abc.net.au/v2/page/collection?path=/triplej/programs/house-party&size=20"
 
-def get_info(url):
-    """Haalt met yt-dlp (met geo‑bypass) de audio‑URL, titel, beschrijving en upload‑date op."""
-    r = subprocess.run(
-        ["yt-dlp", "-j", "--no-playlist", "--no-warnings", "--geo-bypass", url],
-        capture_output=True, text=True, timeout=60
-    )
-    if r.returncode == 0:
-        d = json.loads(r.stdout)
-        return {
-            "url": d.get("url"),
-            "title": d.get("title", "House Party"),
-            "description": d.get("description", ""),
-            "date": d.get("upload_date"),
-        }
-    print(f"FOUT: {r.stderr[:120]}")
-    return None
+def get_collection():
+    """Haalt de lijst met afleveringen op van de ABC‑API."""
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                      "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+    }
+    try:
+        r = requests.get(COLLECTION_API, headers=headers, timeout=15)
+        r.raise_for_status()
+        data = r.json()
+        items = []
+        for block in data.get("blocks", []):
+            for promo in block.get("promos", []):
+                url = promo.get("url")
+                if url and "/house-party/" in url:
+                    # Maak de URL absoluut indien nodig
+                    if url.startswith("/"):
+                        url = "https://www.abc.net.au" + url
+                    items.append(url)
+        # Dubbels verwijderen terwijl volgorde behouden blijft
+        seen = set()
+        uniq = []
+        for u in items:
+            if u not in seen:
+                seen.add(u)
+                uniq.append(u)
+        return uniq
+    except Exception as e:
+        print(f"FOUT bij ophalen collectie: {e}")
+        return []
+
+def get_audio_url(page_url):
+    """Gegeven een afleverings‑pagina, retourneer de directe audio‑URL."""
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                      "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+    }
+    try:
+        r = requests.get(page_url, headers=headers, timeout=15)
+        r.raise_for_status()
+        # Zoek het __NEXT_DATA__‑blok
+        m = re.search(r'<script id="__NEXT_DATA__" type="application/json">([^<]+)</script>', r.text)
+        if not m:
+            print(f"  GEEN __NEXT_DATA__ in {page_url}")
+            return None
+        data = json.loads(m.group(1))
+        # Navigeer naar de renditions (structuur observed in de aflevering)
+        try:
+            renditions = data["props"]["pageProps"]["data"]["documentProps"]["renditions"]
+            if renditions and isinstance(renditions, list):
+                # Neem de eerste beschikbare URL (meestal .aac)
+                audio_url = renditions[0].get("url")
+                if audio_url:
+                    return audio_url
+        except (KeyError, TypeError, IndexError):
+            pass
+        # Fallback: zoek elke URL die eindigt op .aac of .mp4 in de hele JSON
+        def find_media(obj):
+            if isinstance(obj, dict):
+                for v in obj.values():
+                    if isinstance(v, str) and (v.endswith(".aac") or v.endswith(".mp4") or ".m3u8" in v):
+                        return v
+                    res = find_media(v)
+                    if res:
+                        return res
+            elif isinstance(obj, list):
+                for v in obj:
+                    res = find_media(v)
+                    if res:
+                        return res
+            return None
+        audio_url = find_media(data)
+        if audio_url:
+            return audio_url
+        print(f"  GEEN AUDIO‑URL gevonden in {page_url}")
+        return None
+    except Exception as e:
+        print(f"  FOUT bij verwerken {page_url}: {e}")
+        return None
 
 def build_rss(items):
     """Bouwt een RSS‑feed met iTunes‑namespace."""
@@ -61,14 +117,43 @@ def build_rss(items):
 
 if __name__ == "__main__":
     os.makedirs("docs", exist_ok=True)
+    print("Ophalen afleveringenlijst …")
+    page_urls = get_collection()
+    if not page_urls:
+        print("WAARSCHUWLING: Geen afleveringen gevonden via API, gebruik vaste lijst.")
+        page_urls = [
+            "https://www.abc.net.au/triplej/programs/house-party/house-party/106555166",
+            "https://www.abc.net.au/triplej/programs/house-party/house-party/106531936",
+            "https://www.abc.net.au/triplej/programs/house-party/house-party/106507590",
+            "https://www.abc.net.au/triplej/programs/house-party/house-party/106484466",
+            "https://www.abc.net.au/triplej/programs/house-party/house-party/106482730",
+            "https://www.abc.net.au/triplej/programs/house-party/house-party/106457968",
+        ]
     data = []
-    for url in FALLBACK:
+    for url in page_urls:
         print(f"Verwerken: {url}")
-        info = get_info(url)
-        if info:
-            info["page_url"] = url
-            data.append(info)
-            print(f"  OK: {info['title']}")
+        audio_url = get_audio_url(url)
+        if audio_url:
+            # Probeer titel en datum uit de pagina te halen (eenvoudig)
+            try:
+                r = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
+                title_match = re.search(r'<title>([^<]+)</title>', r.text)
+                title = title_match.group(1).strip() if title_match else "House Party"
+                # Verwijder eventuele "‑ Triple J" of dergelijke suffix
+                title = re.sub(r"\s*[-–]\s*Triple J.*$", "", title, flags=re.I).strip()
+                date_match = re.search(r'"uploadDate"\s*:\s*"(\d{8})', r.text)
+                upload_date = date_match.group(1) if date_match else None
+            except:
+                title = "House Party"
+                upload_date = None
+            data.append({
+                "title": title,
+                "url": audio_url,
+                "page_url": url,
+                "date": upload_date,
+                "description": ""  # beschrijving optioneel
+            })
+            print(f"  OK: {title} → {audio_url}")
         else:
             print("  OVERGESLAGEN")
     print(f"Feed bouwen met {len(data)} afleveringen …")
