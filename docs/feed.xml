@@ -6,6 +6,14 @@
     <description>Triple J House Party DJ mix show</description>
     <language>en-au</language>
     <item>
+      <title>Sat 2 May 2026 at 8:00am – House Party [[Latifa Tee](https://www.abc.net.au/triplej/latifa-tee/13574792)]</title>
+      <link>https://www.abc.net.au/triplej/programs/house-party/house-party/106609408</link>
+      <guid isPermaLink="false">https://www.abc.net.au/triplej/programs/house-party/house-party/106609408</guid>
+      <description/>
+      <pubDate>Sat, 02 May 2026 00:00:00 +0000</pubDate>
+      <enclosure url="https://mediacore-live-production.akamaized.net/audio/02/k5/Z/30.aac" type="audio/mpeg" length="0"/>
+    </item>
+    <item>
       <title>Fri 1 May 2026 at 8:00am – House Party [[Shantan Wantan Ichiban](https://www.abc.net.au/triplej/shantan-wantan-ichiban/7952780)]</title>
       <link>https://www.abc.net.au/triplej/programs/house-party/house-party/106607016</link>
       <guid isPermaLink="false">https://www.abc.net.au/triplej/programs/house-party/house-party/106607016</guid>
@@ -68,14 +76,6 @@
       <description/>
       <pubDate>Sat, 04 Apr 2026 00:00:00 +0000</pubDate>
       <enclosure url="https://mediacore-live-production.akamaized.net/audio/02/j8/Z/si.aac" type="audio/mpeg" length="0"/>
-    </item>
-    <item>
-      <title>Fri 3 Apr 2026 at 8:00am – House Party [[Shantan Wantan Ichiban](https://www.abc.net.au/triplej/shantan-wantan-ichiban/7952780)]</title>
-      <link>https://www.abc.net.au/triplej/programs/house-party/house-party/106507590</link>
-      <guid isPermaLink="false">https://www.abc.net.au/triplej/programs/house-party/house-party/106507590</guid>
-      <description/>
-      <pubDate>Fri, 03 Apr 2026 00:00:00 +0000</pubDate>
-      <enclosure url="https://mediacore-live-production.akamaized.net/audio/02/j8/Z/ce.aac" type="audio/mpeg" length="0"/>
     </item>
   </channel>
 </rss>
