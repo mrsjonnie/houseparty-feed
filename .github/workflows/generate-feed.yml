@@ -4,6 +4,7 @@ on:
   schedule:
     - cron: "0 20 * * 5"   # vrijdag 20:00 UTC
     - cron: "0 20 * * 6"   # zaterdag 20:00 UTC
+    - cron: "0 20 * * 7"   # zondag 20:00 UTC
   workflow_dispatch:       # handmatig uitvoeren mogelijk
 
 permissions:
